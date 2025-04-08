@@ -5,6 +5,7 @@ from bson import ObjectId
 from schema.folder_dto import Folder
 from datetime import datetime
 from security.jwtConfig import jwtBearer
+from schema.user_dto import Role
 
 
 router = APIRouter(tags=["Folders"]) 
@@ -48,6 +49,9 @@ def create_folder(folder: Folder, current_user: dict = Depends(jwtBearer()) ):
 @router.delete("/folders/{folder_id}")
 def delete_folder(folder_id: str, current_user: dict = Depends(jwtBearer())):
 
+    if current_user.get("role") != Role.ADMIN:
+        raise HTTPException(status_code=403, detail="Only admins have access to delete folders")
+
     if not ObjectId.is_valid(folder_id):
         raise HTTPException(status_code=400,detail="Invalid folder ID. Please check and provide a valid ID.")
 
@@ -79,23 +83,26 @@ def update_folder_name(folder_id: str, new_folder_name: str, current_user: dict 
 
     return {"message": "Folder name has been updated successfully"}
 
+@router.get("/folders/{folder_id}")
+def list_folder_contents(folder_id: str, current_user: dict = Depends(jwtBearer())):
+    try:
+        folder_object_id = ObjectId(folder_id)  
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid folder ID format.")
 
-@router.get("/folders/{folder_name}")
-def list_folder_contents(folder_name: str, current_user: dict = Depends(jwtBearer())):
-    folder = folders_collection.find_one({"name": folder_name})
+    folder = folders_collection.find_one({"_id": folder_object_id})
     if not folder:
         raise HTTPException(status_code=404, detail="Folder not found.")
 
-    folder_id = folder["_id"]
-
-    subfolders = list(folders_collection.find({"parent_folder_id": folder_id}))
-    files = list(files_collection.find({"folder_id": folder_id}))
+    subfolders = list(folders_collection.find({"parent_folder_id": folder_object_id}))
+    files = list(files_collection.find({"folder_id": folder_object_id}))
 
     subfolders_data = [{"id": str(subfolder["_id"]), "name": subfolder["name"]} for subfolder in subfolders]
     files_data = [{"id": str(file["_id"]), "name": file["filename"]} for file in files]
 
     return {
-        "folder_name": folder_name,
+        "folder_id": folder_id,
+        "folder_name": folder.get("name", ""),
         "subfolders": subfolders_data,
         "files": files_data
     }
